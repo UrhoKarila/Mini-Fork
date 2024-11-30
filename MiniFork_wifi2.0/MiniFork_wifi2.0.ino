@@ -28,7 +28,7 @@
 
 #define leftMotor0 21   // Used for controlling the left motor movement
 #define leftMotor1 19   // Used for controlling the left motor movement
-#define rightMotor0 33  // Used for controlling the right motor movementc:\Users\JohnC\Desktop\SOLIDWORKS Connected.lnk
+#define rightMotor0 33  // Used for controlling the right motor movement
 #define rightMotor1 32  // Used for controlling the right motor movement
 
 // global constants
@@ -45,6 +45,7 @@ int servoDelay = 0;
 float steeringServoValue = 86;
 float steeringAdjustment = 1;
 int throttleValue = 0;
+int throttleDeadzone = 15;
 int steeringTrim = 0;
 int mastTiltServoValue = 90;
 int mastTiltValue = 90;
@@ -55,6 +56,10 @@ bool lightsOn = false;
 AsyncWebServer server(80);
 AsyncWebSocket wsCarInput("/CarInput");
 
+/// <summary>
+/// Takes steering input value and writes it to steering servo
+/// Then, writes tank-drive steering adjustment to throttle outputs.
+/// </summary>
 void steeringControl(int steeringValue)
 {
   steeringServoValue = steeringValue;
@@ -67,11 +72,17 @@ void steeringControl(int steeringValue)
   processThrottle(throttleValue);
 }
 
+/// <summary>
+/// Sets mastTiltServo to the provided value.
+/// </summary>
 void mastTiltControl(int mastTiltServoValue)
 {
     mastTiltServo.write(mastTiltServoValue);
 }
 
+/// <summary>
+/// Raises/Lowers/Stops mast movement
+/// </summary>
 void mastControl(int mastValue){
 if (mastValue == 5) {
     digitalWrite(mastMotor0, HIGH);
@@ -84,9 +95,14 @@ if (mastValue == 5) {
     digitalWrite(mastMotor1, LOW);
   }
 }
+
+/// <summary>
+/// Writes motor speed values to drive motors.
+/// Adds steering adjustment as appropriate.
+/// </summary>
 void processThrottle(int throttle) {
   throttleValue = throttle;
-  if (throttleValue > 15 || throttleValue < -15) {
+  if (throttleValue > throttleDeadzone || throttleValue < -throttleDeadzone) {
     if(steeringServoValue > 100) {
       moveMotor(leftMotor0, leftMotor1, throttleValue * steeringAdjustment);
       moveMotor(rightMotor0, rightMotor1, throttleValue);
@@ -102,11 +118,15 @@ void processThrottle(int throttle) {
     moveMotor(rightMotor0, rightMotor1, 0);
   }
 }
+
+/// <summary>
+/// Writes motor value to provided motor pins
+/// </summary>
 void moveMotor(int motorPin1, int motorPin0, int velocity) {
-  if (velocity > 15) {
+  if (velocity > 0) {
     analogWrite(motorPin0, velocity);
     analogWrite(motorPin1, LOW);
-  } else if (velocity < -15) {
+  } else if (velocity < 0) {
     analogWrite(motorPin0, LOW);
     analogWrite(motorPin1, (-1 * velocity));
   } else {
@@ -114,6 +134,10 @@ void moveMotor(int motorPin1, int motorPin0, int velocity) {
     analogWrite(motorPin1, 0);
   }
 }
+
+/// <summary>
+/// Enables/disables lights
+/// </summary>
 void lightControl()
 {
   if ((millis() - lightSwitchTime) > 200) {
@@ -130,12 +154,16 @@ void lightControl()
     lightSwitchTime = millis();
   }
 }
+
+/// <summary>
+/// Gradually moves mast angle.
+/// </summary>
 void mastTilt(int mastTilt)
 {
    if (mastTilt == 1) {
     if (servoDelay == 2) {
       if (mastTiltValue >= 10 && mastTiltValue < 165) {
-        mastTiltValue = mastTiltValue + 2;
+        mastTiltValue += 2;
         mastTiltServo.write(mastTiltValue);
       }
       servoDelay = 0;
@@ -143,8 +171,8 @@ void mastTilt(int mastTilt)
     servoDelay++;
   } else {
     if (servoDelay == 2) {
-      if (mastTiltValue <= 170 && mastTiltValue > 15) {
-        mastTiltValue = mastTiltValue - 2;
+      if (mastTiltValue > 15 && mastTiltValue <= 170) {
+        mastTiltValue -= 2;
         mastTiltServo.write(mastTiltValue);
       }
       servoDelay = 0;
@@ -153,16 +181,25 @@ void mastTilt(int mastTilt)
   }
 }
 
+/// <summary>
+/// Responds with controls page
+/// </summary>
 void handleRoot(AsyncWebServerRequest *request)
 {
   request->send_P(200, "text/html", htmlHomePage);
 }
 
+/// <summary>
+/// handles 404
+/// </summary>
 void handleNotFound(AsyncWebServerRequest *request)
 {
   request->send(404, "text/plain", "File Not Found");
 }
 
+/// <summary>
+/// Handles web events passed from controls page
+/// </summary>
 void onCarInputWebSocketEvent(AsyncWebSocket *server,
                               AsyncWebSocketClient *client,
                               AwsEventType type,
@@ -221,6 +258,9 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
   }
 }
 
+/// <summary>
+/// Sets output modes and default values
+/// </summary>
 void setUpPinModes()
 {
   pinMode(mastMotor0, OUTPUT);
@@ -243,13 +283,15 @@ void setUpPinModes()
   mastTiltControl(mastTiltServoValue);
 }
 
-
+/// <summary>
+/// Sets up wifi, webpage, pins, etc.
+/// </summary>
 void setup(void)
 {
   setUpPinModes();
   Serial.begin(115200);
 
-  WiFi.softAP(ssid );
+  WiFi.softAP(ssid);
   IPAddress IP = WiFi.softAPIP();
   Serial.print("AP IP address: ");
   Serial.println(IP);
